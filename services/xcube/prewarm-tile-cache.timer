@@ -1,0 +1,10 @@
+[Unit]
+Description=Run xcube tile cache pre-warm every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

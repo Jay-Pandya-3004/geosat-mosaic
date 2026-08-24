@@ -1,0 +1,151 @@
+reader:
+  name: insat3d_img_l1b_h5
+  short_name: Insat 3d IMG L1B HDF5
+  long_name: Insat 3d IMG L1B HDF5
+  description: >
+    Reader for Insat 3d/3DR/3DS IMG level 1B data in Hdf5 format. This is
+    global_mosaic's own copy of satpy's stock insat3d_img_l1b_h5 reader,
+    pointed at this project's patched file_reader instead
+    (readers/insat3d_img_l1b_h5.py) -- satpy's own stock reader crashes on
+    real INSAT-3DS files: its start_time/end_time parse
+    `Acquisition_Start_Time`/`Acquisition_End_Time` with
+    `"%d-%b-%YT%H:%M:%S"`, but real files carry a fractional-seconds
+    suffix (verified against a real 01-JAN-2026 INSAT-3DS L1B file:
+    "01-JAN-2026T00:00:35.473"), which that format string can't
+    parse. This project's reader strips it first. See readers/README.md
+    for the two options considered (monkey-patch installed satpy vs. this
+    SATPY_CONFIG_PATH override) -- this file is the latter, the one that
+    survives a `pip install --upgrade satpy`.
+
+    file_patterns diverges from satpy's stock reader (which only has the
+    `_V01R00` form) -- confirmed 2026-08-04 against real 04-AUG-2021
+    INSAT-3D/INSAT-3DR L1B sample files (`3DIMG_04AUG2021_0830_L1B_STD.h5`,
+    `3RIMG_04AUG2021_0845_L1B_STD.h5`) that satpy's own upstream pattern
+    can't match at all: those real files have no version suffix, just
+    `..._STD.h5`. Real INSAT-3DS files (2026 samples) DO
+    carry `_V01R00` -- a genuine naming-convention difference across
+    generations/eras, not a typo in either sample. Added the no-suffix
+    form as a second pattern alongside the original, not a replacement.
+  status: Beta, navigation still off
+  supports_fsspec: false
+  sensors: [insat3d_img]
+  reader: !!python/name:satpy.readers.core.yaml_reader.GEOFlippableFileYAMLReader
+
+file_types:
+    h5_std:
+        file_reader: !!python/name:global_mosaic.readers.insat3d_img_l1b_h5.Insat3DIMGL1BH5FileHandler
+        file_patterns: [
+          "{platform:2s}{sensor:3s}_{nominal_time:%d%b%Y_%H%M}_{level:3s}_STD_V01R00.h5",
+          "{platform:2s}{sensor:3s}_{nominal_time:%d%b%Y_%H%M}_{level:3s}_STD.h5"
+        ]
+
+
+datasets:
+  VIS:
+    name: VIS
+    resolution: 1000
+    wavelength: [0.525, 0.65, 0.775]
+    calibration:
+      reflectance:
+        standard_name: toa_bidirectional_reflectance
+        units: "%"
+      radiance:
+        standard_name: toa_outgoing_radiance_per_unit_wavelength
+        units: mW.cm-2.sr-1.micron-1
+      counts:
+        standard_name: counts
+        units: count
+    file_type: [h5_std]
+
+  SWIR:
+    name: SWIR
+    resolution: 1000
+    wavelength: [1.575, 1.65, 1.725]
+    calibration:
+      radiance:
+        standard_name: toa_outgoing_radiance_per_unit_wavelength
+        units: mW.cm-2.sr-1.micron-1
+      counts:
+        standard_name: counts
+        units: count
+    file_type: [h5_std]
+
+  WV:
+    name: WV
+    resolution: 8000
+    wavelength: [6.58, 6.88, 7.18]
+    calibration:
+      brightness_temperature:
+        standard_name: toa_brightness_temperature
+        units: K
+      radiance:
+        standard_name: toa_outgoing_radiance_per_unit_wavelength
+        units: mW.cm-2.sr-1.micron-1
+      counts:
+        standard_name: counts
+        units: count
+    file_type: [h5_std]
+
+  MIR:
+    name: MIR
+    resolution: 4000
+    wavelength: [3.83, 3.93, 4.03]
+    calibration:
+      brightness_temperature:
+        standard_name: toa_brightness_temperature
+        units: K
+      radiance:
+        standard_name: toa_outgoing_radiance_per_unit_wavelength
+        units: mW.cm-2.sr-1.micron-1
+      counts:
+        standard_name: counts
+        units: count
+    file_type: [h5_std]
+
+  TIR1:
+    name: TIR1
+    resolution: 4000
+    wavelength: [10.32, 10.82, 11.32]
+    calibration:
+      brightness_temperature:
+        standard_name: toa_brightness_temperature
+        units: K
+      radiance:
+        standard_name: toa_outgoing_radiance_per_unit_wavelength
+        units: mW.cm-2.sr-1.micron-1
+      counts:
+        standard_name: counts
+        units: count
+    file_type: [h5_std]
+
+  TIR2:
+    name: TIR2
+    resolution: 4000
+    wavelength: [11.46, 11.96, 12.46]
+    calibration:
+      brightness_temperature:
+        standard_name: toa_brightness_temperature
+        units: K
+      radiance:
+        standard_name: toa_outgoing_radiance_per_unit_wavelength
+        units: mW.cm-2.sr-1.micron-1
+      counts:
+        standard_name: counts
+        units: count
+    file_type: [h5_std]
+
+  longitude:
+    name: longitude
+    standard_name: longitude
+    long_name: "Longitude"
+    units: degree
+    resolution: [1000, 4000, 8000]
+    file_type: [h5_std]
+
+  latitude:
+    name: latitude
+    standard_name: latitude
+    long_name: "Latitude"
+    units: degree
+    resolution: [1000, 4000, 8000]
+    file_type: [h5_std]

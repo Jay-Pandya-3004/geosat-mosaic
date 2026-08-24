@@ -1,0 +1,13 @@
+[Unit]
+Description=Pre-warm geosat-mosaic-api /minmax cache for newly landed mosaic files
+After=network.target geosat-mosaic-api.service
+
+[Service]
+Type=oneshot
+User=local  # this deploy's WSL2 username -- replace with your own
+# First-ever run backfills the whole rolling window (~213 files x 4 bands,
+# throttled to 2 concurrent -- could genuinely take tens of minutes), well
+# past systemd's default 90s start timeout. Every run after that is fast
+# (only new files since the last run).
+TimeoutStartSec=0
+ExecStart=/opt/geosat-mosaic-api/.venv/bin/python3 /opt/geosat-mosaic-api/prewarm_minmax.py

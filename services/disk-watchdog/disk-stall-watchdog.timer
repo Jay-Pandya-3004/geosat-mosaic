@@ -1,0 +1,10 @@
+[Unit]
+Description=Run disk-stall watchdog every 3 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=3min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

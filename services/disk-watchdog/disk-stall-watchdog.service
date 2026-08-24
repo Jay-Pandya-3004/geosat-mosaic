@@ -1,0 +1,7 @@
+[Unit]
+Description=Check for the 2026-08-21 transient disk-stall pattern (D-state + slow dd read)
+
+[Service]
+Type=oneshot
+User=local  # this deploy's WSL2 username -- replace with your own
+ExecStart=/opt/disk-watchdog/check_disk_stall.sh

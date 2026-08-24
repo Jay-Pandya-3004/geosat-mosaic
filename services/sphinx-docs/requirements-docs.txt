@@ -1,0 +1,15 @@
+# Dependencies needed to rebuild these docs (not the runtime deps of the
+# services themselves -- see ../fastapi/requirements.txt for those).
+#
+# Sphinx + a theme, plus the real (lightweight) runtime deps of
+# fastapi/main.py so autodoc can actually import it: fastapi, pydantic,
+# netCDF4, numpy. `xcube` and `tornado` are deliberately NOT installed --
+# they're mocked at build time via autodoc_mock_imports in conf.py (the
+# 5 xcube/ files only ever import them lazily inside function bodies, so
+# a real install was never needed just to document these modules).
+Sphinx==9.1.0
+furo==2025.12.19
+fastapi==0.141.1
+pydantic==2.13.4
+netCDF4==1.7.4
+numpy==2.5.2

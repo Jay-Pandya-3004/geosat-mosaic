@@ -1,0 +1,13 @@
+[Unit]
+Description=Restart xcube nightly at 03:00 local time
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+# If the box was hibernated/off at 03:00 (this box does sleep sometimes),
+# run the missed restart on next boot instead of silently skipping to the
+# next day.
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

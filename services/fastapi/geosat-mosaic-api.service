@@ -1,0 +1,37 @@
+[Unit]
+Description=GeoSat metadata API (FastAPI) -- point-probe/timeseries/satellite-metadata
+After=network.target
+
+[Service]
+Type=simple
+# Adjust User/paths below to match wherever the app source actually got
+# copied/cloned to and whichever Python env it's running in -- these are
+# reasonable defaults, not hardcoded requirements. This service has no
+# prior systemd unit to match (it's
+# currently started by hand with a bare `nohup` on the RHEL box), so
+# there's no existing convention to preserve here the way THREDDS/xcube's
+# units do. Replace local with your real WSL2 username
+# (`whoami`) before `cp`-ing this to /etc/systemd/system/ -- systemd unit
+# files don't expand `%i` outside a real template unit (a "name@.service"
+# file), so this can't just be left as a variable.
+User=local
+WorkingDirectory=/opt/geosat-mosaic-api
+ExecStart=/opt/geosat-mosaic-api/.venv/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 8001
+Restart=always
+RestartSec=10
+
+# Guardrail added 2026-08-16 after /minmax's pre-warm backfill (2+
+# concurrent full-file reads through the ProcessPoolExecutor) pushed the
+# whole 15Gi WSL2 box into real swap thrashing -- same pathology, same
+# fix shape as xcube.service's own MemoryHigh/MemoryMax (precedented by
+# the 2026-08-15 tile-concurrency performance investigation's OOM
+# findings). _read_minmax was also reworked the same day to read packed
+# int16 instead of decoding to float64 (~4x less memory per call), which
+# should keep real usage well under this cap -- this is a backstop for
+# if that assumption turns out wrong under some future load pattern, not
+# a substitute for the real fix.
+MemoryHigh=2G
+MemoryMax=3G
+
+[Install]
+WantedBy=multi-user.target

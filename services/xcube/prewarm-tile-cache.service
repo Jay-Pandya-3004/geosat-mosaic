@@ -1,0 +1,8 @@
+[Unit]
+Description=Pre-warm xcube tile cache for newly landed mosaic files
+After=network.target xcube.service nginx.service
+
+[Service]
+Type=oneshot
+User=local  # this deploy's WSL2 username -- replace with your own
+ExecStart=/opt/xcube-conda/envs/xcube/bin/python3 /opt/xcube-deploy/prewarm_cache.py

@@ -1,0 +1,22 @@
+[Unit]
+Description=Apache Tomcat (THREDDS)
+After=network.target
+
+[Service]
+Type=forking
+User=tomcat
+Environment=JAVA_HOME=/opt/thredds/java17
+Environment=CATALINA_HOME=/opt/thredds/tomcat
+# Heap flags deliberately NOT set here -- see setenv.sh in this
+# same directory (installed to $CATALINA_HOME/bin/setenv.sh) for why a
+# systemd Environment= line is the wrong place for multi-value
+# CATALINA_OPTS. This unit only sets JAVA_OPTS, a single value with no
+# spaces, which doesn't hit that bug.
+Environment=JAVA_OPTS=-Dtds.content.root.path=/opt/thredds/tds-content
+ExecStart=/opt/thredds/tomcat/bin/startup.sh
+ExecStop=/opt/thredds/tomcat/bin/shutdown.sh
+RestartSec=10
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

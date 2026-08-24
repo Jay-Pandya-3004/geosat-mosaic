@@ -1,0 +1,37 @@
+[Unit]
+Description=xcube server
+After=network.target
+
+[Service]
+Type=simple
+User=local  # this deploy's WSL2 username -- replace with your own
+# Launched via serve_wrapper.py, not the plain `xcube serve` CLI, since
+# 2026-08-16 -- applies dataset_cache_patch.py first (bounds
+# DatasetsContext._dataset_cache to a fixed size with LRU eviction,
+# fixing the actual root cause of the memory growth the MemoryHigh/
+# MemoryMax guardrail below only ever contained).
+# 2026-08-17: raised close delay from dataset_cache_patch.py's default
+# (5s) after live testing showed a burst of >40 evictions (e.g. a heavy
+# tile-prewarm sweep) can still collide with an in-flight read at 5s --
+# see that module's own docstring.
+Environment=XCUBE_DATASET_CACHE_CLOSE_DELAY=20
+ExecStart=/opt/xcube-conda/envs/xcube/bin/python3 /opt/xcube-deploy/serve_wrapper.py --port 8000 --config /opt/xcube-deploy/config.yml
+Restart=always
+RestartSec=10
+
+# Guardrail added 2026-08-15 after xcube OOM-killed itself at 21:41 (grew to
+# 10.3G RSS / 17.4G total-vm, dragging the whole 15Gi WSL2 box into swap
+# thrashing for minutes before the kernel's global OOM killer finally acted --
+# that thrashing, not the kill itself, is what caused client-visible 499s).
+# MemoryHigh asks the cgroup to reclaim/throttle before this point; MemoryMax
+# is a hard cap enforced by the cgroup's own OOM killer, which acts fast and
+# contained at this specific process rather than waiting for whole-system
+# memory+swap exhaustion. Kept as a backstop even after the 2026-08-16 root-
+# cause fix (dataset_cache_patch.py) -- defense in depth, not redundant: the
+# patch bounds one specific cache, this guardrail bounds the whole process
+# regardless of cause.
+MemoryHigh=5G
+MemoryMax=6G
+
+[Install]
+WantedBy=multi-user.target

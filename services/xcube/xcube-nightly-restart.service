@@ -1,0 +1,15 @@
+[Unit]
+Description=Nightly restart of xcube (memory-growth mitigation)
+After=xcube.service
+
+[Service]
+# Pragmatic stopgap, not a fix -- xcube has twice now grown to its own
+# MemoryHigh=5G guardrail (xcube.service) over ~17-24h of uptime and
+# thrashed into full unresponsiveness before anyone caught it (per the
+# 2026-08-15 tile-concurrency performance investigation's OOM findings
+# and a 2026-08-16 recurrence). Real root cause still undiagnosed. This trades a
+# predictable ~1-2min nightly blip (dataset-store rescan on restart, not
+# instant) for avoiding an unpredictable, unattended thrash-into-
+# unresponsiveness affecting real users at some worse moment.
+Type=oneshot
+ExecStart=/usr/bin/systemctl restart xcube.service

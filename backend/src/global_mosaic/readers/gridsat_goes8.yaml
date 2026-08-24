@@ -1,0 +1,49 @@
+reader:
+  name: gridsat_goes8
+  short_name: GridSat GOES-08
+  long_name: GridSat Reprocessed GOES-08 (I–M series)
+  reader: !!python/name:satpy.readers.core.yaml_reader.FileYAMLReader
+  description: GridSat GOES-08 reprocessed brightness temperature and reflectance
+  sensors: [goes_imager]
+
+file_types:
+  gridsat_goes_nc:
+    file_reader: !!python/name:satpy.readers.gridsat_goes8_reader.GridSatGOESFileHandler
+    file_patterns:
+      - 'GridSat-GOES.goes{satellite_id:2d}.{year:4d}.{month:2d}.{day:2d}.{hour:2d}{minute:2d}.v{version:2d}.nc'
+
+datasets:
+  ch1:
+    name: ch1
+    wavelength: [0.55, 0.65, 0.75]
+    resolution: 1000
+    calibration: reflectance
+    file_type: [gridsat_goes_nc]
+
+  ch2:
+    name: ch2
+    wavelength: [3.7, 3.9, 4.1]
+    resolution: 4000
+    calibration: brightness_temperature
+    file_type: [gridsat_goes_nc]
+
+  ch3:
+    name: ch3
+    wavelength: [6.5, 6.75, 7.0]
+    resolution: 4000
+    calibration: brightness_temperature
+    file_type: [gridsat_goes_nc]
+
+  ch4:
+    name: ch4
+    wavelength: [10.2, 10.7, 11.2]
+    resolution: 4000
+    calibration: brightness_temperature
+    file_type: [gridsat_goes_nc]
+
+  ch5:
+    name: ch5
+    wavelength: [11.5, 11.95, 12.4]
+    resolution: 4000
+    calibration: brightness_temperature
+    file_type: [gridsat_goes_nc]

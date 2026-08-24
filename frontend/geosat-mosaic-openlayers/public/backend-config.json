@@ -1,0 +1,10 @@
+{
+  "ip": "0.0.0.0",
+  "updatedAt": "2026-08-19T14:33:26Z",
+  "ports": {
+    "thredds": 8080,
+    "xcube": 8000,
+    "xcubeHttps": 8443,
+    "metadataApi": 8001
+  }
+}

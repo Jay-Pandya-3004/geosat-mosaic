@@ -1,0 +1,34 @@
+# xcube server config -- points at the SAME local mosaics directory
+# THREDDS reads (not through THREDDS/OPeNDAP -- verified 2026-08-07 that
+# xcube has no OPeNDAP support at all; its FileSystem/StoreId types are
+# only "file", "s3", "memory"). Each matching file shows up as its OWN
+# browsable dataset in xcube's viewer/API -- xcube does NOT
+# automatically concatenate a directory of same-grid, single-timestamp
+# files into one time-varying cube the way THREDDS's NcML joinNew does
+# (confirmed against xcube's own docs) -- for genuine continuous
+# time-series/OPeNDAP access, that's what THREDDS is for (see
+# ../thredds/catalog.xml); this gives per-timestamp browsing instead,
+# automatically reflecting retention (a file retain_rolling_window.py
+# deletes just stops appearing here on the next request, no separate
+# bookkeeping needed).
+#
+# Verified 2026-08-07 against xcube's real current docs (readthedocs) --
+# this DataStores/StoreId/StoreParams/Datasets/Path schema, including
+# read_only (a real new_fs_data_store param, default False), is correct
+# as written, not just "based on one example" anymore. StoreId supports
+# "file"/"s3"/"abfs" (Azure) per that same check -- corrected here from
+# an earlier wrong guess of "file"/"s3"/"memory".
+
+DataStores:
+  - Identifier: mosaics
+    StoreId: file
+    StoreParams:
+      root: /srv/mosaic-data/tiera
+      max_depth: 1
+      read_only: true
+    Datasets:
+      - Path: "tiera_*.nc"
+        Style: default
+        Augmentation:
+          Path: augment_coords.py
+          Function: set_lat_lon_index

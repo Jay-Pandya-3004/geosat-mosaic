@@ -1,0 +1,10 @@
+[Unit]
+Description=Run xcube HDF-error watchdog every 5 minutes
+
+[Timer]
+OnActiveSec=1min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

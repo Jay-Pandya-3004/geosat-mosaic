@@ -1,0 +1,17 @@
+satpy[ahi_hsd,abi_l1b]
+pyresample
+xarray
+zarr
+s3fs
+boto3
+eumdac
+requests
+pyyaml
+python-dotenv
+numpy
+matplotlib
+cartopy
+netCDF4
+h5py
+pytest
+openpyxl

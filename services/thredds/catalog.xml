@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  THREDDS root catalog for the Global Mosaic Tier A rolling window.
+
+  IMPORTANT: XML comments must never contain two adjacent hyphen
+  characters anywhere inside them (XML 1.0 spec section 2.5) - a
+  bug that broke both this file and threddsConfig.xml on first deploy
+  (a JDOMParseException naming that exact two-character sequence as the
+  disallowed one). Every comment below deliberately uses a single
+  hyphen with spaces around it instead of the double-hyphen style used
+  everywhere else in this project's non-XML files.
+
+  Uses type="joinNew" (not joinExisting) deliberately: each tiera_<ts>.nc
+  file is a single-timestamp snapshot with only y/x grid dimensions -
+  see backend/src/global_mosaic/processing/mosaic_io.py's
+  open_tiled_band_writer (createDimension calls only for "y"/"x", no
+  "time" at all; the actual requested time lives in the
+  requested_target_time STRING attribute, not a dimension). joinExisting
+  requires files to already have a time dimension to join along; ours
+  don't, so joinNew is the correct choice - it builds a fresh time
+  dimension by extracting the timestamp straight from each filename via
+  dateFormatMark, stacking each file's (y, x) grid into (time, y, x).
+
+  recheckEvery: how out-of-date THREDDS is willing to let this dataset
+  be, i.e. how often it re-scans the directory for new/removed files -
+  NOT how often the underlying data changes. Set to comfortably less
+  than the ~12-15 min per-timestamp Tier A cadence so new files show up
+  promptly. An already-open aggregation does NOT notice files
+  disappearing (per NcML docs) - deleting a file the retention script
+  has retired can cause a FileNotFoundException for anyone with a stale
+  handle until the next recheck. Not fully eliminated by any
+  recheckEvery value, just bounded by it - keep this in mind if that
+  starts happening in practice.
+
+  A gotcha this project already hit once with regexp-vs-literal
+  matching (see acquisition/insat.py's file_patterns fix) - double
+  check the suffix filter below still matches your filenames if
+  the naming convention ever changes.
+-->
+<catalog xmlns="http://www.unidata.ucar.edu/namespaces/thredds/InvCatalog/v1.0"
+         xmlns:xlink="http://www.w3.org/1999/xlink"
+         name="Global Mosaic" version="1.2">
+
+  <service name="all" serviceType="Compound" base="">
+    <service name="odap" serviceType="OPENDAP" base="/thredds/dodsC/" />
+    <service name="wms" serviceType="WMS" base="/thredds/wms/" />
+    <service name="ncss" serviceType="NetcdfSubset" base="/thredds/ncss/grid/" />
+    <service name="httpserver" serviceType="HTTPServer" base="/thredds/fileServer/" />
+  </service>
+  <service name="httpserver-only" serviceType="HTTPServer" base="/thredds/fileServer/" />
+
+<service name="raw-ncss-download" serviceType="Compound" base="">
+    <service name="raw-ncss" serviceType="NetcdfSubset" base="/thredds/ncss/grid/" />
+    <service name="raw-httpserver" serviceType="HTTPServer" base="/thredds/fileServer/" />
+  </service>
+
+  <datasetScan name="Global Mosaic -- Raw Tier A Files"
+               ID="global-mosaic-tiera-raw"
+               path="global-mosaic-tiera-raw"
+               location="/srv/mosaic-data/tiera">
+    <metadata inherited="true">
+      <serviceName>raw-ncss-download</serviceName>
+      <dataType>Grid</dataType>
+    </metadata>
+    <filter>
+      <include wildcard="tiera_*.nc"/>
+    </filter>
+  </datasetScan>
+
+  <dataset name="Global Mosaic -- Tier A rolling 7-day window"
+           ID="global-mosaic-tiera-rolling"
+           urlPath="global-mosaic/tierA_rolling.nc">
+    <serviceName>all</serviceName>
+    <netcdf xmlns="http://www.unidata.ucar.edu/namespaces/netcdf/ncml-2.2">
+      <aggregation dimName="time" type="joinNew" recheckEvery="10 min">
+        <!--
+          Every genuinely per-timestamp grid variable must be listed
+          explicitly (per NcML docs, joinNew requires this - variables
+          NOT listed here are treated as "union" fields, i.e. taken once
+          from whichever file THREDDS opens first and assumed identical
+          everywhere else). That's exactly the behavior wanted for
+          lat/lon/crs (deliberately left OUT of this list below) - same
+          target grid every run, so they really are identical across
+          every file, matching how open_tiled_band_writer already
+          treats them as shared/unsuffixed.
+          List mirrors exactly what open_tiled_band_writer/
+          finalize_tiled_band_writer write per band (see
+          backend/src/global_mosaic/processing/mosaic_io.py) - update
+          this list if that variable set ever changes.
+        -->
+        <variableAgg name="value_mir"/>
+        <variableAgg name="satellite_id_mir"/>
+        <variableAgg name="is_blended_mir"/>
+        <variableAgg name="runner_up_satellite_id_mir"/>
+        <variableAgg name="blend_weight_winner_mir"/>
+        <variableAgg name="pixel_resolution_km_mir"/>
+
+        <variableAgg name="value_wv"/>
+        <variableAgg name="satellite_id_wv"/>
+        <variableAgg name="is_blended_wv"/>
+        <variableAgg name="runner_up_satellite_id_wv"/>
+        <variableAgg name="blend_weight_winner_wv"/>
+        <variableAgg name="pixel_resolution_km_wv"/>
+
+        <variableAgg name="value_tir1"/>
+        <variableAgg name="satellite_id_tir1"/>
+        <variableAgg name="is_blended_tir1"/>
+        <variableAgg name="runner_up_satellite_id_tir1"/>
+        <variableAgg name="blend_weight_winner_tir1"/>
+        <variableAgg name="pixel_resolution_km_tir1"/>
+
+        <variableAgg name="value_tir2"/>
+        <variableAgg name="satellite_id_tir2"/>
+        <variableAgg name="is_blended_tir2"/>
+        <variableAgg name="runner_up_satellite_id_tir2"/>
+        <variableAgg name="blend_weight_winner_tir2"/>
+        <variableAgg name="pixel_resolution_km_tir2"/>
+
+        <scan location="/srv/mosaic-data/tiera"
+              suffix=".nc"
+              dateFormatMark="tiera_#yyyyMMdd'T'HHmmss"
+              subdirs="false" />
+      </aggregation>
+
+      <!--
+        Classic OPeNDAP (DAP2, the protocol behind /thredds/dodsC/) has
+        no 64-bit integer type at all - surfaced 2026-08-07 as a
+        "NcDDS Variable data type = long" 500 error. These 16 variables
+        (4 per band x 4 bands) are the only ones stored as
+        datetime64[ns], which CF-encodes to a 64-bit integer
+        (nanoseconds since epoch) - every other variable in this file
+        is already a DAP2-safe type (int8/int16 packed grids,
+        float32/float64 scalars, strings). Removed here only from THIS
+        aggregated/served view - the values are untouched in the
+        underlying tiera_<ts>.nc files, still readable directly by
+        anyone opening them with plain netCDF4/xarray/NCSS (NCSS works
+        correctly with these variables present, since it doesn't go
+        through DAP2's type-serialization path at all).
+      -->
+      <remove type="variable" name="time_mir"/>
+      <remove type="variable" name="satellite_scan_start_mir"/>
+      <remove type="variable" name="satellite_scan_end_mir"/>
+      <remove type="variable" name="satellite_scan_mid_mir"/>
+      <remove type="variable" name="time_wv"/>
+      <remove type="variable" name="satellite_scan_start_wv"/>
+      <remove type="variable" name="satellite_scan_end_wv"/>
+      <remove type="variable" name="satellite_scan_mid_wv"/>
+      <remove type="variable" name="time_tir1"/>
+      <remove type="variable" name="satellite_scan_start_tir1"/>
+      <remove type="variable" name="satellite_scan_end_tir1"/>
+      <remove type="variable" name="satellite_scan_mid_tir1"/>
+      <remove type="variable" name="time_tir2"/>
+      <remove type="variable" name="satellite_scan_start_tir2"/>
+      <remove type="variable" name="satellite_scan_end_tir2"/>
+      <remove type="variable" name="satellite_scan_mid_tir2"/>
+
+      <!--
+        The temporary 9-entry remove block (crs, satellite_<band>,
+        satellite_temporal_resolution_minutes_<band>) that used to live
+        here was deleted 2026-08-14 when standing this up on Windows/WSL2 -
+        `ncdump -h` against every file currently on disk
+        (oldest 2026-08-07T20:25:08 through newest 2026-08-11T04:25:08)
+        showed all of them already have the post-fix int32 types, so the
+        DAP2 "long" incompatibility this block worked around no longer
+        applies to any file in the current rolling window.
+      -->
+    </netcdf>
+  </dataset>
+
+  <datasetScan name="Global Mosaic -- Gallery Thumbnails"
+               ID="global-mosaic-gallery"
+               path="global-mosaic-gallery"
+               location="/srv/mosaic-data/gallery/tiera">
+    <metadata inherited="true">
+      <serviceName>httpserver-only</serviceName>
+    </metadata>
+  </datasetScan>
+
+</catalog>

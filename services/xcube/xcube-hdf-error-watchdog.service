@@ -1,0 +1,7 @@
+[Unit]
+Description=Check xcube logs for HDF errors, restart to clear poisoned HDF5 state
+After=xcube.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/xcube-deploy/check_xcube_hdf_errors.sh

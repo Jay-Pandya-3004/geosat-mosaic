@@ -1,0 +1,88 @@
+:root {
+  color-scheme: light dark;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  width: 100%;
+}
+
+/* Cesium's own toolbar (home/scene-mode/help buttons and their dropdowns)
+   defaults to no explicit z-index, so our fixed-position panels
+   (LayerSwitcher/TimeControls/CalendarControl, all z-index: 1) can render
+   on top of it and partially hide a dropdown like the scene-mode picker's
+   3D/2D/Columbus View menu. Push it above our panels. */
+.cesium-viewer-toolbar {
+  z-index: 2;
+}
+
+/* CalendarControl.tsx's `<input type="date">` calendar-icon glyph is
+   browser-drawn (not a real DOM element `style` can target) and defaults
+   to dark, close to invisible against this app's dark (`#1c1c1c`) field
+   background -- made white here, matching this app's
+   geosat-mosaic-openlayers/geosat-gallery siblings.
+   `::-webkit-calendar-picker-indicator` is Chromium-only (Firefox draws
+   this glyph without an equivalent styleable pseudo-element), acceptable
+   here since this project's own testing/dev workflow is Chromium-based
+   throughout (`mcp__claude-in-chrome`).
+
+   This rule went stale after a Chrome update (Chrome 151) and needed
+   re-diagnosing from scratch:
+   - `!important` is required because something now wins the cascade
+     against a plain (non-`!important`) version of this rule --
+     getComputedStyle showed the plain version resolved to `filter:
+     none` despite this exact selector being present and matching.
+   - Plain `invert(1)` alone (this rule's original value, still fine
+     pre-Chrome-151) no longer gives enough contrast -- even with
+     `!important` added, the icon was still effectively invisible.
+     `brightness(0)` first crushes the glyph to pure black regardless of
+     whatever gray it's actually drawn in now, so the subsequent
+     `invert(1)` reliably lands on pure white instead of some middling
+     gray. */
+.date-input-white-icon::-webkit-calendar-picker-indicator {
+  filter: brightness(0) invert(1) !important;
+}
+
+/* Cesium's own built-in "Data Attribution" credit lightbox
+   (CreditDisplay.js -- no source file of ours to edit, it's part of the
+   Viewer widget) deliberately goes full-screen (`.cesium-credit-
+   lightbox-mobile`, `height/width: 100%`, no border/radius) below
+   Cesium's own internal 576px viewport-width breakpoint (see
+   node_modules/cesium's bundled source). That decision (which
+   class it applies, and when) happens in Cesium's own JS and can't be
+   changed from here; these rules just restyle the box once Cesium puts
+   it in that state, to match this app's own About/Info panel mobile-
+   modal look (capped size, centered, rounded, dark card) instead of
+   covering the whole screen. `!important` is required because Cesium
+   injects its own <style> element into <head> at CreditDisplay-
+   construction time -- i.e. after this stylesheet has already loaded --
+   so normal source-order cascade can't win, and it also has to beat an
+   inline `marginTop` the same code sets at runtime. */
+.cesium-credit-lightbox-overlay {
+  background-color: rgba(0, 0, 0, 0.7) !important;
+  /* Cesium's own default is `z-index: 1`, tying with this app's own
+     panels (LayerSwitcher etc, all `z-index: 1`) -- a tie means the
+     lightbox could paint behind an open Layers panel depending on DOM
+     insertion order (Cesium appends this at Viewer-construction time,
+     not guaranteed to land after React's own panel divs). Needs
+     `!important` for the same reason as the rest of this block. */
+  z-index: 5 !important;
+}
+
+.cesium-credit-lightbox.cesium-credit-lightbox-mobile {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  margin: 0 !important;
+  width: calc(100vw - 32px) !important;
+  height: auto !important;
+  max-width: 480px !important;
+  max-height: 78vh !important;
+  overflow-y: auto !important;
+  background-color: rgba(30, 30, 30, 0.96) !important;
+  border-radius: 6px !important;
+}

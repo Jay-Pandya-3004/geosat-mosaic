@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+data/cache/
+data/raw/
+sphinx-docs/build/

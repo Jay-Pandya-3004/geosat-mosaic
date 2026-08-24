@@ -1,0 +1,66 @@
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #111;
+}
+
+/* HelpPanel.tsx's `overflowY: auto` (a long scrolling doc inside a
+   `maxHeight: 70vh` box) otherwise gets the browser's stock scrollbar --
+   a bulky, light-grey default that clashes with this app's dark UI. Per
+   explicit request, a slim, themed one instead: `::-webkit-scrollbar`
+   for Chromium (this project's dev/test browser throughout) plus the
+   standard `scrollbar-width`/`scrollbar-color` properties for Firefox,
+   so both engines get a reasonable (if not pixel-identical) result --
+   pseudo-elements can't be reached via a React inline `style` prop, so
+   this needs a real class + global stylesheet rule. Colors match the
+   panel's own dark background/border palette rather than introducing a
+   new accent. */
+.themed-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #555 transparent;
+}
+
+.themed-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.themed-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.themed-scrollbar::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+.themed-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #6e6e6e;
+}
+
+/* CalendarControl.tsx's `<input type="date">` calendar-icon glyph is
+   browser-drawn (not a DOM element `style` can target) and defaults to
+   dark, close to invisible against this app's dark (`#1c1c1c`) field
+   background, so it's forced white here. Same fix as
+   geosat-mosaic-openlayers's own index.css.
+   `::-webkit-calendar-picker-indicator` is Chromium-only (acceptable --
+   this project's whole dev/test workflow is Chromium-based).
+
+   This rule went stale after a Chrome update (Chrome 151) and needed
+   re-diagnosing from scratch:
+   - `!important` is required because something now wins the cascade
+     against a plain (non-`!important`) version of this rule --
+     getComputedStyle showed the plain version resolved to `filter:
+     none` despite this exact selector being present and matching.
+   - Plain `invert(1)` alone (this rule's original value, still fine
+     pre-Chrome-151) no longer gives enough contrast -- with `!important`
+     added the icon was still effectively invisible. `brightness(0)`
+     first crushes the glyph to pure black regardless of whatever gray
+     it's actually drawn in now, so the subsequent `invert(1)` reliably
+     lands on pure white instead of some middling gray. */
+.date-input-white-icon::-webkit-calendar-picker-indicator {
+  filter: brightness(0) invert(1) !important;
+}

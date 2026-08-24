@@ -1,0 +1,22 @@
+# Exact dependencies needed to rebuild these docs.
+# Napoleon (Google-style docstring parsing) ships bundled with Sphinx --
+# no separate package needed.
+#
+# Everything below is either Sphinx/theme tooling or a genuinely
+# lightweight runtime dependency of global_mosaic/scripts that autodoc
+# needs importable for real (requests, numpy, pyyaml, python-dotenv,
+# Pillow). The heavy scientific/geospatial stack (satpy, pyresample,
+# xarray, dask, zarr, s3fs, boto3, eumdac, cartopy, matplotlib, netCDF4,
+# h5py, openpyxl, pyorbital) is NOT installed -- it is mocked out via
+# autodoc_mock_imports in conf.py instead.
+
+sphinx==9.0.4
+furo==2025.12.19
+
+# Lightweight runtime deps of global_mosaic / scripts, installed for real
+# so autodoc can actually import modules that use them at module level.
+requests==2.34.2
+numpy==2.4.6
+pyyaml==6.0.3
+python-dotenv==1.2.3
+pillow==12.3.0

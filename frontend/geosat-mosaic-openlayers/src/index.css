@@ -1,0 +1,164 @@
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #111;
+}
+
+/* OL's default Zoom control is rendered into this slot (see Map.tsx's
+   `zoomControlContainerRef`/`target` wiring) instead of its own default
+   top-left overlay position, so it can sit in the same flex row as the
+   About/Help buttons instead of behind LayerSwitcher. Overrides its
+   normal `position: absolute; top: .5em; left: .5em` (ol.css's `.ol-
+   control`/`.ol-zoom` rules) and its default vertical +/- stack. */
+.app-zoom-slot .ol-zoom {
+  position: static;
+  top: auto;
+  left: auto;
+  display: flex;
+  flex-direction: row;
+  gap: 2px;
+}
+
+.app-zoom-slot .ol-zoom-in {
+  border-radius: 2px 0 0 2px;
+}
+
+.app-zoom-slot .ol-zoom-out {
+  border-radius: 0 2px 2px 0;
+}
+
+/* OL's default Rotate/north-reset control (compass button, autoHide --
+   only visible once the map is actually rotated) is rendered into this
+   slot (see Map.tsx's `rotateControlContainerRef`/`target` wiring)
+   instead of its own default top-right overlay position, so it sits at
+   bottom-right instead of behind the About/Help/zoom cluster. Overrides
+   its normal `position: absolute; top: .5em; right: .5em` (ol.css's
+   `.ol-control`/`.ol-rotate` rules) -- the `.ol-hidden` opacity/
+   visibility transition rule is untouched, still handles show/hide. */
+.app-rotate-slot .ol-rotate {
+  position: static;
+  top: auto;
+  right: auto;
+}
+
+/* A little bigger than OL's default (22x22px, from `.ol-control button`'s
+   `height/width: 1.375em` at the page's 16px root font) for an easier
+   touch target. `.ol-control button`'s own `font-size: inherit` means
+   bumping the font-size here scales the whole button (and the compass
+   arrow glyph inside it) together, not just a fixed pixel override on one
+   dimension. */
+.app-rotate-slot .ol-rotate button {
+  font-size: 20px;
+}
+
+/* CalendarControl.tsx's `<input type="date">` calendar-icon glyph is
+   browser-drawn (not a DOM element `style` can target) and defaults to
+   dark, close to invisible against this app's dark (`#1c1c1c`) field
+   background, so it's forced white here.
+   `::-webkit-calendar-picker-indicator` is Chromium-only (Firefox draws
+   this glyph without an equivalent styleable pseudo-element), acceptable
+   here since this project's own testing/dev workflow is Chromium-based
+   throughout (`mcp__claude-in-chrome`).
+
+   This rule went stale after a Chrome update (Chrome 151) and needed
+   re-diagnosing from scratch:
+   - `!important` is required because something now wins the cascade
+     against a plain (non-`!important`) version of this rule --
+     getComputedStyle showed the plain version resolved to `filter:
+     none` despite this exact selector being present and matching.
+   - Plain `invert(1)` alone (this rule's original value, still fine
+     pre-Chrome-151) no longer gives enough contrast -- with `!important`
+     added the icon was still effectively invisible. `brightness(0)`
+     first crushes the glyph to pure black regardless of whatever gray
+     it's actually drawn in now, so the subsequent `invert(1)` reliably
+     lands on pure white instead of some middling gray. */
+.date-input-white-icon::-webkit-calendar-picker-indicator {
+  filter: brightness(0) invert(1) !important;
+}
+
+/* OL's native Attribution control ("i" icon, bottom-right, no custom
+   component -- see Map.tsx) has no backdrop/card of its own: expanding
+   it just reveals an inline `<ul>` of credit text next to the icon.
+   On a narrow phone (`.app-map-narrow`, from Map.tsx's own `isNarrow`
+   state -- same narrow-viewport signal every other panel in this app
+   uses, not a plain CSS media query) that tiny inline strip is too easy
+   to miss/hard to read, so this restyles the expanded control into the
+   same dimmed-backdrop + centered rounded card look as the About/Info
+   panels' own mobile modal (see AppInfoPanel.tsx/InfoPanel.tsx).
+   `:not(.ol-collapsed)` is OL's own class for "currently expanded".
+   The dimmed backdrop itself is a real React-rendered element
+   (Map.tsx's `attributionBackdropStyle`/`attributionExpanded`), not a
+   CSS trick -- a `::before`-via-`:has()` version of it was tried here
+   first and never actually painted above the app's other fixed-position
+   panels despite computed style confirming correct position/z-index/
+   background, so it was dropped in favor of a real element. */
+/* Desktop's expanded attribution list has no z-index at all by default
+   (ol.css never sets one on `.ol-attribution`), so it could paint behind
+   this app's own panels (LayerSwitcher etc, all `z-index: 1`) when they
+   overlap -- e.g. LayerSwitcher open on the left while the expanded list
+   grows leftward from its bottom-right anchor. This clears that; the
+   narrow/mobile modal variant below sets its own higher z-index anyway
+   (needs to clear this same rule too, hence the higher specificity
+   selector there already winning regardless of source order). */
+.ol-attribution:not(.ol-collapsed) {
+  z-index: 5;
+}
+
+/* The above alone does NOT actually fix the overlap -- elementFromPoint
+   showed it kept losing to both LayerSwitcher and the mobile modal's own
+   backdrop below despite this. Root cause: OL
+   wraps ALL its controls (zoom, rotate, attribution) in this one shared
+   container, which carries its OWN explicit `z-index: 0` (an OL
+   default, not ours). That creates a stacking context that traps every
+   control nested inside it -- no matter how high `.ol-attribution`'s
+   own z-index goes, it's only ever compared against its *siblings
+   inside this same wrapper*, never against anything outside it (this
+   app's panels, or the mobile modal's backdrop). What actually gets
+   compared against those, at the top level, is this wrapper's z-index:
+   0 -- which loses to everything (panels at 1, backdrop at 9). Scoped
+   via `:has()` to only while attribution is actually expanded, since
+   this wrapper also holds the zoom/rotate buttons, and leaving it
+   permanently elevated would lift those above other panels/modals too,
+   whenever unrelated to attribution. */
+.ol-overlaycontainer-stopevent:has(.ol-attribution:not(.ol-collapsed)) {
+  /* `!important` is required: OL sets `z-index: 0` as an inline style
+     attribute on this element directly (per getAttribute('style')), and
+     inline styles beat any external stylesheet rule regardless of
+     selector specificity. */
+  z-index: 11 !important;
+}
+
+.app-map-narrow .ol-attribution:not(.ol-collapsed) {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  width: calc(100vw - 32px);
+  max-width: 480px;
+  max-height: 78vh;
+  overflow-y: auto;
+  padding: 14px 16px;
+  background: rgba(30, 30, 30, 0.96);
+  border-radius: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.app-map-narrow .ol-attribution:not(.ol-collapsed) ul {
+  flex-direction: column;
+  gap: 4px;
+  color: #edeeef;
+  font: 13px sans-serif;
+}
+
+.app-map-narrow .ol-attribution:not(.ol-collapsed) button {
+  align-self: flex-end;
+  margin-bottom: 8px;
+}

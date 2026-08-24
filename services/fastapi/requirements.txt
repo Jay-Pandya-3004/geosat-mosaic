@@ -1,0 +1,14 @@
+# Corrected vs. an earlier requirements.txt that only listed
+# fastapi/uvicorn/netCDF4 -- numpy and pydantic are both used
+# directly in main.py (numpy as `np`, pydantic's BaseModel for
+# TimeseriesRequest) but were only present there as transitive
+# dependencies that happened to already be installed in that specific
+# environment. Listed explicitly here with the real versions verified
+# live via direct `import` (2026-08-14) so a fresh install doesn't
+# depend on transitive-resolution luck matching what's installed
+# elsewhere today.
+fastapi==0.141.1
+uvicorn==0.52.1
+netCDF4==1.7.2
+numpy==2.4.1
+pydantic==2.13.4

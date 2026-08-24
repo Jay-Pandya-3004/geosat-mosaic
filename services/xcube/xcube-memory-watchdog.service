@@ -1,0 +1,7 @@
+[Unit]
+Description=Check xcube memory usage, restart proactively before it thrashes
+After=xcube.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/xcube-deploy/check_xcube_memory.sh

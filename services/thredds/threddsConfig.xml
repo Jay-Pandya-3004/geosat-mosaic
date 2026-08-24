@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Entirely optional (per TDS docs: if this file is missing, TDS 5.x just
+  uses defaults) - included only for the serverInformation block, which
+  the docs describe as "strongly encouraged" though not required.
+  Everything else is left at default; add elements here only for
+  settings you actually want to change.
+
+  A bug this project hit on first deploy: an earlier version of this
+  comment used two adjacent hyphens as a separator (fine in Python/shell
+  comments, invalid inside an XML comment per the XML 1.0 spec) and
+  silently broke TDS startup with a NullPointerException, not even a
+  clear parse-error message. Every comment in this project's XML files
+  now uses a single hyphen with spaces instead.
+-->
+<threddsConfig>
+  <serverInformation>
+    <name>Global Mosaic THREDDS Server</name>
+    <logoUrl>/thredds/thredds.jpg</logoUrl>
+    <logoAltText>Global Mosaic</logoAltText>
+    <abstract>Rolling 7-day window of global geostationary Tier A mosaics.</abstract>
+    <keywords>satellite, geostationary, mosaic</keywords>
+    <contact>
+      <name>Admin</name>
+      <organization>Global Mosaic</organization>
+      <email></email>
+    </contact>
+    <hostInstitution>
+      <name>Global Mosaic</name>
+      <webSite></webSite>
+      <logoUrl>/thredds/thredds.jpg</logoUrl>
+      <logoAltText>Global Mosaic</logoAltText>
+    </hostInstitution>
+  </serverInformation>
+</threddsConfig>
