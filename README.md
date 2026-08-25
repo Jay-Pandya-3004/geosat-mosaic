@@ -10,6 +10,18 @@ A global cloud/imagery mosaic built from 6 geostationary satellites (GOES-18/19,
 | GeoSat-MOSAIC (OpenLayers, 2D map) | [geosat-mosaic-openlayers.jay-pandya.dev](https://geosat-mosaic-openlayers.jay-pandya.dev) |
 | GeoSat-Gallery (pre-rendered thumbnails) | [geosat-gallery.jay-pandya.dev](https://geosat-gallery.jay-pandya.dev) |
 
+### GeoSat-MOSAIC-Cesium
+
+![GeoSat-MOSAIC-Cesium demo](docs/assets/GeoSat-MOSAIC-Cesium.gif)
+
+### GeoSat-MOSAIC-OpenLayers
+
+![GeoSat-MOSAIC-OpenLayers demo](docs/assets/GeoSat-MOSAIC-OpenLayers.gif)
+
+### GeoSat-Gallery
+
+![GeoSat-Gallery demo](docs/assets/GeoSat-Gallery.gif)
+
 ## What it is
 
 Six geostationary satellites each stare at a fixed slice of the Earth from a different longitude. This project fetches their raw imagery, corrects for the fact that no two instruments measure quite the same wavelengths (a per-satellite spectral-response-function correction — see [wiki/Data-Processing-Pipeline.md](wiki/Data-Processing-Pipeline.md)), reprojects everything onto one shared global grid, picks the best-viewing-angle source at every pixel, and blends across satellite seams — producing a single global mosaic every processing cycle, across 6 bands (VIS, SWIR, MIR, WV, TIR1, TIR2).
