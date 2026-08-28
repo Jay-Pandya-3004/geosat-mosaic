@@ -219,6 +219,32 @@ def test_login_retries_on_server_error_then_succeeds(monkeypatch):
     assert len(calls) == 3
 
 
+def test_login_retries_on_rate_limit_then_succeeds(monkeypatch):
+    """A 429 from the login endpoint used to be treated the same as an
+    invalid-credentials 401 and never retried, even though it's the
+    transient "back off and try again" response MOSDAC itself sends -- a
+    large patch-retry backlog logging in once per stuck candidate could
+    trip this rate limit and then permanently give up on that
+    band/satellite instead of backing off and retrying, the same mistake
+    the 503 case above already made."""
+    responses = [
+        _FakeResponse(status_code=429),
+        _FakeResponse(status_code=429),
+        _FakeResponse(json_data={"access_token": "AT", "refresh_token": "RT"}),
+    ]
+    calls = []
+
+    def fake_post(*a, **k):
+        calls.append(1)
+        return responses[len(calls) - 1]
+
+    monkeypatch.setattr(insat_module.requests, "post", fake_post)
+    monkeypatch.setattr(insat_module.time, "sleep", lambda *_: None)  # skip real backoff delay
+
+    assert _login("user", "pass") == ("AT", "RT")
+    assert len(calls) == 3
+
+
 # ==========================================================
 # _download_record
 # ==========================================================

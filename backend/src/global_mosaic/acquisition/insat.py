@@ -308,25 +308,32 @@ def _exponential_sleep(attempt: int) -> None:
     time.sleep(min(2**attempt, 60) + random.uniform(0, 1))
 
 
-def _is_server_error(exc: requests.HTTPError) -> bool:
-    """Check whether an HTTPError is a transient 5xx server error worth retrying.
+def _is_retryable_error(exc: requests.HTTPError) -> bool:
+    """Check whether an HTTPError is a transient 5xx or 429 error worth retrying.
 
-    True for a 5xx (transient, worth retrying) HTTPError. A gap found
-    2026-08-05 when testing against the MOSDAC service: a genuine 503
-    from the login endpoint was treated as a permanent
+    True for a 5xx or 429 (transient, worth retrying) HTTPError. A gap
+    found 2026-08-05 when testing against the MOSDAC service: a genuine
+    503 from the login endpoint was treated as a permanent
     "invalid credentials" failure and never retried -- mirroring
     mdapi_opt5.py's own login()/refresh_token(), which have the same
     gap (its download_worker() DOES retry 5xx via this exact status-code
     check, just not login()/refresh_token() -- an inconsistency in the
     reference client itself, not something to keep faithfully).
 
+    429 was added after a large patch-retry backlog logged into MOSDAC
+    once per stuck candidate and tripped its rate limiter -- treating
+    429 the same as "invalid credentials" meant one rate-limit response
+    permanently gave up on that band/satellite instead of backing off
+    and trying again a few seconds later, the same mistake the 503 case
+    above already made.
+
     Args:
         exc: The caught ``requests.HTTPError``.
 
     Returns:
-        True if `exc` has a response with a 5xx status code.
+        True if `exc` has a response with a 5xx or 429 status code.
     """
-    return exc.response is not None and 500 <= exc.response.status_code < 600
+    return exc.response is not None and (exc.response.status_code == 429 or 500 <= exc.response.status_code < 600)
 
 
 def _search_dates(target: dt.datetime, tolerance_minutes: float) -> list[dt.date]:
@@ -384,7 +391,7 @@ def _login(username: str, password: str) -> tuple[str, str]:
         except (requests.ConnectionError, requests.Timeout):
             _exponential_sleep(attempt)
         except requests.HTTPError as e:
-            if _is_server_error(e):
+            if _is_retryable_error(e):
                 _exponential_sleep(attempt)
                 continue
             raise  # a real 4xx (invalid credentials etc.) shouldn't retry
@@ -415,7 +422,7 @@ def _refresh(username: str, password: str, refresh_token: str) -> tuple[str, str
         except (requests.ConnectionError, requests.Timeout):
             _exponential_sleep(attempt)
         except requests.HTTPError as e:
-            if _is_server_error(e):
+            if _is_retryable_error(e):
                 _exponential_sleep(attempt)
                 continue
             break  # a real 4xx means the refresh token itself is bad -- fall through to full re-login
@@ -470,7 +477,7 @@ def _search_nearest(satellite_key: str, target: dt.datetime, tolerance_minutes: 
             except (requests.ConnectionError, requests.Timeout):
                 _exponential_sleep(attempt)
             except requests.HTTPError as e:
-                if _is_server_error(e):
+                if _is_retryable_error(e):
                     _exponential_sleep(attempt)
                     continue
                 break  # a real 4xx for this date won't fix itself by retrying -- try the next date
