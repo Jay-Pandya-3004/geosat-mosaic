@@ -182,7 +182,7 @@ merely "investigated": concurrent per-band fetches for the same
 (satellite, target) raced to open the same shared raw file (one INSAT
 .h5/Meteosat .nat file covers every band) -- pinned down via the exact
 WinError 32 sharing-violation signature and fixed with download
-locks (insat.py/meteosat.py's _acquire_download_lock) plus a matching
+locks (insat.py's _acquire_file_lock/meteosat.py's _acquire_download_lock) plus a matching
 merge-write lock (mosaic_io.py's _acquire_write_lock) for the final .nc
 open. With that specific crash risk closed, 4 was tried -- but a live
 memory check at that point (still 2 concurrent workers actually running)
@@ -768,7 +768,7 @@ def _cleanup_stale_lock_files(final_out_dir: Path, dest_dir: Path, now: dt.datet
     when THIS tick started is provably from a fully-finished previous
     run, never a currently-held lock, so there is no risk of deleting a
     file out from under an active holder. Purely a tidiness step (see
-    _acquire_write_lock/_acquire_download_lock's own docstrings for why
+    _acquire_write_lock/_acquire_file_lock's own docstrings for why
     the file's mere existence was never required for correctness) --
     keeps .locks/ and dest_dir from accumulating one stray file per
     timestamp forever.
@@ -1272,7 +1272,7 @@ def _patch_newly_available(
       exposed, also fixed 2026-08-09: for satellites like INSAT where
       one real raw record covers every band, concurrent per-band fetches
       for the SAME satellite+target used to race to download the exact
-      same raw file -- see insat.py's own _acquire_download_lock for the
+      same raw file -- see insat.py's own _acquire_file_lock for the
       fix; that race is orthogonal to and doesn't affect the reasoning
       here, since it's the RAW download that raced, not this function's
       own npz_path writes, which were never shared to begin with.)

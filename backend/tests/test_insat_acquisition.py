@@ -16,6 +16,7 @@ from global_mosaic.acquisition.insat import (
     _real_mid_time,
     _search_dates,
     _search_nearest,
+    _shared_login,
     download,
 )
 
@@ -246,6 +247,51 @@ def test_login_retries_on_rate_limit_then_succeeds(monkeypatch):
 
 
 # ==========================================================
+# _shared_login
+# ==========================================================
+
+
+def test_shared_login_reuses_cached_token_within_ttl(tmp_path, monkeypatch):
+    """Fixes a real incident: schedule_pipeline.py's _run_partial_recheck
+    runs several patch-retry workers concurrently, each a separate
+    `python.exe` subprocess -- with a large partial backlog, every one of
+    them ended up calling _login for the same MOSDAC account within
+    seconds of each other, tripping MOSDAC's own rate limiter on
+    /download_api/gettoken even with the 429-retry fix in place (each
+    worker's own retry window kept losing the race against the OTHER
+    workers' simultaneous attempts). _shared_login caches the token in
+    dest_dir so a second call within the TTL window reuses it instead of
+    logging in again."""
+    login_calls = []
+    monkeypatch.setattr(insat_module, "_login", lambda u, p: login_calls.append(1) or ("AT", "RT"))
+
+    first = _shared_login("user", "pass", str(tmp_path))
+    second = _shared_login("user", "pass", str(tmp_path))
+
+    assert first == ("AT", "RT")
+    assert second == ("AT", "RT")
+    assert len(login_calls) == 1, "a second call within the TTL window should reuse the cached token, not log in again"
+
+
+def test_shared_login_logs_in_again_after_ttl_expires(tmp_path, monkeypatch):
+    login_calls = []
+    monkeypatch.setattr(insat_module, "_login", lambda u, p: login_calls.append(1) or ("AT", "RT"))
+    monkeypatch.setattr(insat_module, "_TOKEN_CACHE_TTL_SECONDS", 0.0)
+
+    _shared_login("user", "pass", str(tmp_path))
+    _shared_login("user", "pass", str(tmp_path))
+
+    assert len(login_calls) == 2, "a call after the cached token's TTL has elapsed should log in again"
+
+
+def test_shared_login_falls_back_to_real_login_on_corrupt_cache(tmp_path, monkeypatch):
+    (tmp_path / ".mosdac_token_cache.json").write_text("not valid json")
+    monkeypatch.setattr(insat_module, "_login", lambda u, p: ("AT", "RT"))
+
+    assert _shared_login("user", "pass", str(tmp_path)) == ("AT", "RT")
+
+
+# ==========================================================
 # _download_record
 # ==========================================================
 
@@ -259,7 +305,7 @@ def test_download_record_succeeds_and_verifies_size(tmp_path, monkeypatch):
 
     monkeypatch.setattr(insat_module.requests, "get", fake_get)
 
-    success, access_token, refresh_token = _download_record("AT", "RT", "user", "pass", 111, final_path)
+    success, access_token, refresh_token = _download_record("AT", "RT", "user", "pass", 111, final_path, str(tmp_path))
 
     assert success is True
     assert access_token == "AT"
@@ -279,9 +325,9 @@ def test_download_record_refreshes_token_on_401_then_succeeds(tmp_path, monkeypa
         return _FakeResponse(headers={"Content-Length": str(len(payload))}, chunks=[payload])
 
     monkeypatch.setattr(insat_module.requests, "get", fake_get)
-    monkeypatch.setattr(insat_module, "_refresh", lambda username, password, refresh_token: ("FRESH", "RT2"))
+    monkeypatch.setattr(insat_module, "_refresh", lambda username, password, refresh_token, dest_dir: ("FRESH", "RT2"))
 
-    success, access_token, refresh_token = _download_record("EXPIRED", "RT", "user", "pass", 111, final_path)
+    success, access_token, refresh_token = _download_record("EXPIRED", "RT", "user", "pass", 111, final_path, str(tmp_path))
 
     assert success is True
     assert access_token == "FRESH"
@@ -292,7 +338,7 @@ def test_download_record_returns_false_on_404(tmp_path, monkeypatch):
     final_path = str(tmp_path / "3SIMG_01JAN2026_0000_L1B_STD_V01R00.h5")
     monkeypatch.setattr(insat_module.requests, "get", lambda *a, **k: _FakeResponse(status_code=404))
 
-    success, _, _ = _download_record("AT", "RT", "user", "pass", 111, final_path)
+    success, _, _ = _download_record("AT", "RT", "user", "pass", 111, final_path, str(tmp_path))
     assert success is False
 
 
@@ -336,14 +382,13 @@ def test_download_orchestrates_search_login_and_download(tmp_path, monkeypatch):
 
     download_calls = []
 
-    def fake_download_record(access_token, refresh_token, username, password, record_id, final_path):
+    def fake_download_record(access_token, refresh_token, username, password, record_id, final_path, dest_dir):
         download_calls.append((record_id, final_path))
         with open(final_path, "wb") as f:
             f.write(b"downloaded")
         return True, access_token, refresh_token
 
     monkeypatch.setattr(insat_module, "_download_record", fake_download_record)
-    monkeypatch.setattr(insat_module.requests, "post", lambda *a, **k: _FakeResponse())  # logout
 
     result = download("insat-3ds", dt.datetime(2026, 1, 1, 0, 17, 44), str(tmp_path))
 

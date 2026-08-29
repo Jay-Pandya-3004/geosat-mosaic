@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import json
 import os
 import random
 import re
@@ -118,7 +119,7 @@ _DOWNLOAD_LOCK_TIMEOUT_SECONDS = 1800.0
 _DOWNLOAD_LOCK_POLL_SECONDS = 5.0
 
 
-def _acquire_download_lock(lock_path: Path):
+def _acquire_file_lock(lock_path: Path, busy_message: str):
     """Acquire an OS-level exclusive lock file, blocking (via polling) until available.
 
     Blocks (polling, same mechanism as mosaic_io.py's own
@@ -129,33 +130,22 @@ def _acquire_download_lock(lock_path: Path):
     reasoning) until an OS-level exclusive lock on `lock_path` can be
     acquired, then returns the open lock-file handle.
 
-    The incident this prevents, 2026-08-09: schedule_pipeline.py's
-    _patch_newly_available started fetching all 4 Tier A bands for one
-    satellite CONCURRENTLY (see that function's own docstring for why).
-    But one INSAT MOSDAC record covers ALL bands in a single .h5
-    file -- unlike Himawari (a separate set of 10 segment files per
-    band), concurrent per-band fetches for the SAME (satellite, target)
-    all resolve to the exact same entry["identifier"]/final_path in
-    download() below, and raced to open the identical .part temp file,
-    producing a raw unhandled PermissionError (Windows sharing
-    violation) instead of one download followed by three cheap
-    local-file hits. Keyed on (satellite_key, target, dest_dir) --
-    knowable at the START of download(), unlike final_path itself which
-    isn't known until AFTER a network search succeeds.
-
-    Deliberately blocking, not fail-fast: a second caller reaching this
-    lock is, by construction, asking for the SAME file the first caller
-    is already fetching -- once the first finishes, download() re-checks
-    _find_local_file() and finds it already there, so the second
-    caller's own "download" becomes a cheap local hit instead of a
-    second network transfer.
+    Generic on purpose -- originally written just for serializing
+    concurrent downloads of the same MOSDAC record (see download()'s own
+    comment for that incident), then reused as-is for serializing login
+    attempts across concurrent worker processes (see _shared_login) once
+    that turned out to need the exact same blocking-exclusive-file-lock
+    shape.
 
     Args:
         lock_path: Path to the lock file to create/open and lock.
+        busy_message: Printed once (not per poll) if the lock is already
+            held by another process, so the wait reads correctly for
+            whichever resource is actually being waited on.
 
     Returns:
         The open lock-file handle, holding the exclusive lock. Must be
-        passed to :func:`_release_download_lock` when done.
+        passed to :func:`_release_file_lock` when done.
 
     Raises:
         TimeoutError: If the lock cannot be acquired within
@@ -184,11 +174,11 @@ def _acquire_download_lock(lock_path: Path):
             f.close()
             if waited >= _DOWNLOAD_LOCK_TIMEOUT_SECONDS:
                 raise TimeoutError(
-                    f"could not acquire download lock for {lock_path} after {_DOWNLOAD_LOCK_TIMEOUT_SECONDS:.0f}s -- "
-                    "another process appears to be genuinely stuck holding it, not just still downloading"
+                    f"could not acquire lock for {lock_path} after {_DOWNLOAD_LOCK_TIMEOUT_SECONDS:.0f}s -- "
+                    "another process appears to be genuinely stuck holding it, not just still working"
                 )
             if not announced:
-                print(f"    [insat] another concurrent fetch is already downloading this same record -- waiting for it instead of racing")
+                print(f"    [insat] {busy_message}")
                 announced = True
             time.sleep(_DOWNLOAD_LOCK_POLL_SECONDS)
             waited += _DOWNLOAD_LOCK_POLL_SECONDS
@@ -196,8 +186,8 @@ def _acquire_download_lock(lock_path: Path):
             return f
 
 
-def _release_download_lock(f) -> None:
-    """Release and close a lock handle acquired by :func:`_acquire_download_lock`.
+def _release_file_lock(f) -> None:
+    """Release and close a lock handle acquired by :func:`_acquire_file_lock`.
 
     Args:
         f: The open lock-file handle to unlock and close.
@@ -214,6 +204,78 @@ def _release_download_lock(f) -> None:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     finally:
         f.close()
+
+
+# How long a cached login token is trusted before _shared_login logs in
+# again rather than reusing it. Not tied to MOSDAC's own actual token
+# lifetime (undocumented) -- this only needs to outlast one scheduler
+# tick's burst of concurrent partial-recheck workers, since a stale
+# cached token is still safe: _download_record already refreshes on a
+# 401 mid-download regardless of how the token was obtained. Short
+# enough that a genuinely-expired token doesn't sit cached for long,
+# long enough to actually collapse a burst of simultaneous logins into
+# one real network call.
+_TOKEN_CACHE_TTL_SECONDS = 600.0
+
+
+def _shared_login(username: str, password: str, dest_dir: str) -> tuple[str, str]:
+    """Log into MOSDAC, sharing one token across concurrent worker processes.
+
+    Cross-process wrapper around _login: at most one real login per
+    _TOKEN_CACHE_TTL_SECONDS window, shared by every worker touching the
+    same `dest_dir`, instead of each one logging in independently.
+
+    The incident this fixes: schedule_pipeline.py's _run_partial_recheck
+    runs several patch-retry workers concurrently (each a separate
+    `python.exe` subprocess, not just a thread -- an in-process lock or
+    cache would not be visible across them), and with a large partial
+    backlog every one of them could end up calling _login for the same
+    MOSDAC account within seconds of each other. That burst was enough
+    to trip MOSDAC's own rate limiter on /download_api/gettoken -- and
+    even with _is_retryable_error's 429 backoff, one worker's retry
+    window kept losing the race against the others' simultaneous
+    attempts still hitting the same limit, so the whole batch could end
+    up failing "after retries" instead of any of them recovering.
+
+    Serializing the actual login call (via the same file-lock mechanism
+    download() already uses for concurrent-download races) and caching
+    the result for every other worker to reuse turns N near-simultaneous
+    logins into one -- the other N-1 workers just read the cached token
+    back out once the lock releases, instead of each making their own
+    call to MOSDAC at all.
+
+    Args:
+        username: MOSDAC account username.
+        password: MOSDAC account password.
+        dest_dir: Shared raw-download directory; the lock file and token
+            cache live alongside the raw files here, one pair per
+            directory, shared by every process pointed at it.
+
+    Returns:
+        ``(access_token, refresh_token)`` tuple, either freshly obtained
+        or read back from the shared cache.
+    """
+    lock_path = Path(dest_dir) / ".mosdac_login.lock"
+    cache_path = Path(dest_dir) / ".mosdac_token_cache.json"
+    lock_handle = _acquire_file_lock(lock_path, "another concurrent worker is already logging in -- waiting for it instead of racing")
+    try:
+        if cache_path.exists():
+            try:
+                cached = json.loads(cache_path.read_text())
+                if time.time() - cached["issued_at"] < _TOKEN_CACHE_TTL_SECONDS:
+                    return cached["access_token"], cached["refresh_token"]
+            except (json.JSONDecodeError, KeyError, OSError):
+                pass  # a corrupt/partial cache file just means falling through to a real login below
+
+        access_token, refresh_token = _login(username, password)
+        cache_path.write_text(json.dumps({
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "issued_at": time.time(),
+        }))
+        return access_token, refresh_token
+    finally:
+        _release_file_lock(lock_handle)
 
 
 def _find_local_file(satellite_key: str, target: dt.datetime, dest_dir: str, tolerance_minutes: float = 30.0):
@@ -398,20 +460,34 @@ def _login(username: str, password: str) -> tuple[str, str]:
     raise RuntimeError("MOSDAC login failed after retries")
 
 
-def _refresh(username: str, password: str, refresh_token: str) -> tuple[str, str]:
-    """Refresh the MOSDAC access token, falling back to full re-login on failure.
+def _refresh(username: str, password: str, refresh_token: str, dest_dir: str) -> tuple[str, str]:
+    """Refresh the MOSDAC access token, falling back to a shared re-login on failure.
 
-    Refreshes the access token; falls back to a full re-login if the
-    refresh itself fails, same as mdapi_opt5.py's refresh_token().
+    Refreshes the access token; falls back to _shared_login (not a raw
+    _login) if the refresh itself fails, same as mdapi_opt5.py's
+    refresh_token() except for that one substitution.
+
+    That substitution closes a gap in _shared_login's own fix: a 401
+    mid-download sends _download_record here, and this fallback used to
+    call _login directly, bypassing the cross-process lock/cache
+    entirely. With a large partial backlog, several concurrent workers'
+    downloads can all hit a 401 within the same window and all land in
+    this fallback at once -- calling _login independently reproduces the
+    exact login-burst-trips-the-rate-limiter failure _shared_login was
+    built to prevent, just from a different call site. Routing through
+    _shared_login here means those workers collapse into the same
+    one-real-login-plus-cache-reads behavior as every other caller.
 
     Args:
         username: MOSDAC account username (used for fallback re-login).
         password: MOSDAC account password (used for fallback re-login).
         refresh_token: The current refresh token.
+        dest_dir: Shared raw-download directory, passed through to
+            _shared_login for its lock file and token cache.
 
     Returns:
         Tuple of ``(access_token, refresh_token)``, either freshly
-        refreshed or from a full re-login.
+        refreshed or from a shared re-login.
     """
     for attempt in range(_SEARCH_RETRIES):
         try:
@@ -426,7 +502,7 @@ def _refresh(username: str, password: str, refresh_token: str) -> tuple[str, str
                 _exponential_sleep(attempt)
                 continue
             break  # a real 4xx means the refresh token itself is bad -- fall through to full re-login
-    return _login(username, password)
+    return _shared_login(username, password, dest_dir)
 
 
 def _search_nearest(satellite_key: str, target: dt.datetime, tolerance_minutes: float = 30.0) -> dict | None:
@@ -498,7 +574,7 @@ def _search_nearest(satellite_key: str, target: dt.datetime, tolerance_minutes: 
 
 
 def _download_record(
-    access_token: str, refresh_token: str, username: str, password: str, record_id, final_path: str
+    access_token: str, refresh_token: str, username: str, password: str, record_id, final_path: str, dest_dir: str
 ) -> tuple[bool, str, str]:
     """Download one MOSDAC record to `final_path`, with resume/retry/SHA256 verification.
 
@@ -522,6 +598,8 @@ def _download_record(
         final_path: Local destination path for the completed download.
             A ``.part`` sibling file is used for in-progress/resumable
             downloads.
+        dest_dir: Shared raw-download directory, passed through to
+            _refresh (and from there to _shared_login) on a 401.
 
     Returns:
         Tuple of ``(success, access_token, refresh_token)``. `success`
@@ -552,7 +630,7 @@ def _download_record(
                 _DOWNLOAD_URL, headers=headers, params={"id": record_id}, stream=True, timeout=(10, 300)
             ) as response:
                 if response.status_code == 401:
-                    access_token, refresh_token = _refresh(username, password, refresh_token)
+                    access_token, refresh_token = _refresh(username, password, refresh_token, dest_dir)
                     continue
 
                 response.raise_for_status()
@@ -605,7 +683,7 @@ def download(satellite_key: str, target: dt.datetime, dest_dir: str) -> str | No
 
     The cheap local check and the network search both run BEFORE any
     lock is acquired -- deliberately, see the lock-keying comment below
-    for why. Guarded by _acquire_download_lock/_release_download_lock for
+    for why. Guarded by _acquire_file_lock/_release_file_lock for
     the actual download step -- see that function's own docstring for the
     2026-08-09 incident (concurrent per-band callers racing to download
     the same MOSDAC record) this originally addressed, and the comment
@@ -652,7 +730,7 @@ def download(satellite_key: str, target: dt.datetime, dest_dir: str) -> str | No
     # lock object despite racing on the identical file, so it never
     # actually serializes them.
     lock_path = Path(dest_dir) / f".{entry['identifier']}.downloadlock"
-    lock_handle = _acquire_download_lock(lock_path)
+    lock_handle = _acquire_file_lock(lock_path, "another concurrent fetch is already downloading this same record -- waiting for it instead of racing")
     try:
         # Re-check now that the lock is held -- another caller may have
         # finished downloading this exact record while we were searching.
@@ -661,7 +739,7 @@ def download(satellite_key: str, target: dt.datetime, dest_dir: str) -> str | No
             return final_path
 
         try:
-            access_token, refresh_token = _login(username, password)
+            access_token, refresh_token = _shared_login(username, password, dest_dir)
         except Exception as e:
             print(f"[insat] MOSDAC login failed: {e}")
             return None
@@ -669,14 +747,17 @@ def download(satellite_key: str, target: dt.datetime, dest_dir: str) -> str | No
         Path(dest_dir).mkdir(parents=True, exist_ok=True)
 
         success, access_token, refresh_token = _download_record(
-            access_token, refresh_token, username, password, entry["id"], final_path
+            access_token, refresh_token, username, password, entry["id"], final_path, dest_dir
         )
 
-        try:
-            requests.post(_LOGOUT_URL, json={"username": username}, timeout=10)
-        except Exception:
-            pass  # logout failure shouldn't fail a download that already succeeded
+        # No logout here: the token came from _shared_login's cross-process
+        # cache (see that function's own docstring), so logging out after
+        # every single download would invalidate it for every OTHER worker
+        # still meant to reuse it within the cache's TTL window -- exactly
+        # the sharing this was built to provide. The token simply expires
+        # on MOSDAC's own side once _TOKEN_CACHE_TTL_SECONDS elapses;
+        # nothing here needs to force that early.
 
         return final_path if success else None
     finally:
-        _release_download_lock(lock_handle)
+        _release_file_lock(lock_handle)
