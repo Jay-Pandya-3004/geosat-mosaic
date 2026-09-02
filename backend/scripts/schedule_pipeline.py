@@ -1140,6 +1140,18 @@ def _cleanup_raw_files_for_target(target: dt.datetime, final_out_dir: Path, dest
     issue, and not worth the complexity of full cross-target reference
     counting to avoid.
 
+    unlink() itself is wrapped in a try/except. Real crash hit live:
+    a WinError 32 ("file is being used by another process") on a raw
+    file that `.exists()` had just confirmed present a moment earlier --
+    some other process (this same run's own next candidate, an AV
+    scanner, or a lingering read handle) can grab the file in that
+    window. Left uncaught, this took down the entire tick -- every OTHER
+    candidate still due that run included -- over one single file this
+    function doesn't strictly need to delete right now; the file would
+    just get caught by a later pass instead. Same "skip quietly, don't
+    let cleanup be a crash risk" spirit as the already-missing-file case
+    above.
+
     Args:
         target: The mosaic timestamp whose raw source files should be
             cleaned up.
@@ -1156,7 +1168,10 @@ def _cleanup_raw_files_for_target(target: dt.datetime, final_out_dir: Path, dest
         return
     for raw_path in _raw_files_for_nc(nc_path, dest_dir):
         if raw_path.exists():
-            raw_path.unlink()
+            try:
+                raw_path.unlink()
+            except OSError as e:
+                print(f"    WARNING: could not delete raw file {raw_path.name} ({e}) -- will retry on a later pass")
 
 
 def _run_pipeline(target: dt.datetime, final_out_dir: Path, gallery_dir: Path, memory_budget_gb: float) -> bool:
